@@ -15,6 +15,7 @@ import { Input } from "./ui/input";
 import { Button } from "./ui/button";
 import { Card, CardContent } from "./ui/card";
 import { Skeleton } from "./ui/skeleton";
+import { Checkbox } from "./ui/checkbox";
 import { storage } from "../lib/storage";
 
 interface Sale {
@@ -65,6 +66,7 @@ export function SalesList() {
   const [view, setView] = useState<"list" | "details">("list");
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [saleDetails, setSaleDetails] = useState<SaleDetail | null>(null);
+  const [selectedItems, setSelectedItems] = useState<number[]>([]);
 
   const fetchSales = async (
     currentPage: number,
@@ -131,6 +133,7 @@ export function SalesList() {
     setView("details");
     setLoadingDetails(true);
     setSaleDetails(null);
+    setSelectedItems([]);
 
     try {
       const token = await storage.get("token");
@@ -255,32 +258,64 @@ export function SalesList() {
                   </span>
                 </h3>
                 <div className="space-y-3">
-                  {saleDetails.itens?.map((item) => (
-                    <div
-                      key={item.id}
-                      className="bg-zinc-900 p-4 rounded-xl border border-zinc-800 flex flex-col gap-2"
-                    >
-                      <p className="font-medium text-sm text-white leading-relaxed">
-                        {item.descricao}
-                      </p>
-
-                      <div className="flex flex-wrap justify-between items-center mt-2 gap-2">
-                        <div className="text-zinc-500 text-[11px] sm:text-xs flex gap-2">
-                          <span className="bg-zinc-950 px-2 py-1 rounded border border-zinc-800">
-                            Qtd: {item.quantidade}
-                          </span>
-                          <span className="bg-zinc-950 px-2 py-1 rounded border border-zinc-800 font-mono">
-                            Cod: {item.codigo}
-                          </span>
+                  {saleDetails.itens?.map((item) => {
+                    const isSelected = selectedItems.includes(item.id);
+                    return (
+                      <div
+                        key={item.id}
+                        className={`p-4 rounded-xl border flex gap-4 transition-colors ${
+                          isSelected
+                            ? "bg-blue-900/20 border-blue-500/50"
+                            : "bg-zinc-900 border-zinc-800"
+                        }`}
+                      >
+                        <div className="pt-0.5">
+                          <Checkbox
+                            id={`item-${item.id}`}
+                            checked={isSelected}
+                            onCheckedChange={(checked) => {
+                              if (checked) {
+                                setSelectedItems((prev) => [...prev, item.id]);
+                              } else {
+                                setSelectedItems((prev) =>
+                                  prev.filter((id) => id !== item.id),
+                                );
+                              }
+                            }}
+                            className={
+                              isSelected
+                                ? "border-blue-500 data-[state=checked]:bg-blue-600"
+                                : "border-zinc-700"
+                            }
+                          />
                         </div>
-                        <div className="text-right w-full sm:w-auto mt-1 sm:mt-0">
-                          <p className="font-bold text-sm text-emerald-400">
-                            {formatCurrency(item.quantidade * item.valor)}
-                          </p>
+                        <div className="flex-1 flex flex-col gap-2">
+                          <label
+                            htmlFor={`item-${item.id}`}
+                            className="font-medium text-sm text-white leading-relaxed cursor-pointer"
+                          >
+                            {item.descricao}
+                          </label>
+
+                          <div className="flex flex-wrap justify-between items-center mt-2 gap-2">
+                            <div className="text-zinc-500 text-[11px] sm:text-xs flex gap-2">
+                              <span className="bg-zinc-950 px-2 py-1 rounded border border-zinc-800">
+                                Qtd: {item.quantidade}
+                              </span>
+                              <span className="bg-zinc-950 px-2 py-1 rounded border border-zinc-800 font-mono">
+                                Cod: {item.codigo}
+                              </span>
+                            </div>
+                            <div className="text-right w-full sm:w-auto mt-1 sm:mt-0">
+                              <p className="font-bold text-sm text-emerald-400">
+                                {formatCurrency(item.quantidade * item.valor)}
+                              </p>
+                            </div>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
 
@@ -350,6 +385,39 @@ export function SalesList() {
             </div>
           )}
         </div>
+
+        {/* Action Button Sticky Footer */}
+        {!loadingDetails && saleDetails && selectedItems.length > 0 && (
+          <div className="sticky bottom-0 left-0 w-full p-4 bg-zinc-950/80 backdrop-blur-md border-t border-zinc-800 animate-in slide-in-from-bottom-4 shadow-[0_-15px_40px_rgba(0,0,0,0.6)] z-20 rounded-b-2xl">
+            <Button
+              size="lg"
+              className="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold text-sm sm:text-base shadow-[0_0_20px_rgba(37,99,235,0.2)]"
+              onClick={() => {
+                const payload = {
+                  idVenda: saleDetails.id,
+                  itensSelecionados: saleDetails.itens
+                    .filter((item) => selectedItems.includes(item.id))
+                    .map((item) => ({
+                      idItem: item.id,
+                      quantidade: item.quantidade,
+                      valor: item.valor,
+                    })),
+                };
+                console.log(
+                  "📦 Payload gerado para envio (Backend):",
+                  JSON.stringify(payload, null, 2),
+                );
+                alert(
+                  `Payload gerado!\nVeja no console (F12) os ${payload.itensSelecionados.length} itens formatados.`,
+                );
+              }}
+            >
+              <Package className="w-5 h-5 mr-2" />
+              Processar devolução de {selectedItems.length}{" "}
+              {selectedItems.length === 1 ? "Produto" : "Produtos"}
+            </Button>
+          </div>
+        )}
       </div>
     );
   }
