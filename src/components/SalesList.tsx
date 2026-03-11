@@ -36,11 +36,15 @@ interface SaleDetail {
   totalProdutos: number;
   total: number;
   contato: {
+    id: number;
     nome: string;
     numeroDocumento: string;
   };
   itens: Array<{
     id: number;
+    produto?: {
+      id: number;
+    };
     codigo: string;
     quantidade: number;
     valor: number;
@@ -67,6 +71,9 @@ export function SalesList() {
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [saleDetails, setSaleDetails] = useState<SaleDetail | null>(null);
   const [selectedItems, setSelectedItems] = useState<number[]>([]);
+
+  const [processingReturn, setProcessingReturn] = useState(false);
+  const [returnSuccess, setReturnSuccess] = useState<{ id: number; numero: number; } | null>(null);
 
   const fetchSales = async (
     currentPage: number,
@@ -134,6 +141,7 @@ export function SalesList() {
     setLoadingDetails(true);
     setSaleDetails(null);
     setSelectedItems([]);
+    setReturnSuccess(null);
 
     try {
       const token = await storage.get("token");
@@ -160,8 +168,63 @@ export function SalesList() {
   };
 
   const handleBackToList = () => {
+    if (processingReturn) return;
     setView("list");
     setSaleDetails(null);
+    setReturnSuccess(null);
+  };
+
+  const processReturn = async () => {
+    if (!saleDetails || selectedItems.length === 0) return;
+
+    setProcessingReturn(true);
+    try {
+      const token = await storage.get("token");
+
+      const payload = {
+        idVenda: saleDetails.id,
+        numero: saleDetails.numero,
+        numeroLoja: saleDetails.numeroLoja || "",
+        data: saleDetails.data,
+        total: saleDetails.total,
+        contato: {
+          id: saleDetails.contato.id,
+          nome: saleDetails.contato.nome,
+        },
+        itens: saleDetails.itens
+          .filter((item) => selectedItems.includes(item.id))
+          .map((item) => ({
+            produtoId: item.produto?.id || item.id,
+            descricao: item.descricao,
+            valor: item.valor,
+            quantidade: item.quantidade,
+          })),
+      };
+
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/v1/devolucoes/processar`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(payload),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("Erro ao processar devolução");
+      }
+
+      const responseData = await response.json();
+      setReturnSuccess(responseData.data);
+    } catch (err) {
+      console.error(err);
+      alert("Houve um erro ao processar a devolução. Verifique o console.");
+    } finally {
+      setProcessingReturn(false);
+    }
   };
 
   const formatCurrency = (value: number) => {
@@ -185,7 +248,8 @@ export function SalesList() {
             variant="ghost"
             size="icon"
             onClick={handleBackToList}
-            className="text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-full h-10 w-10 flex-shrink-0"
+            disabled={processingReturn}
+            className="text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-full h-10 w-10 shrink-0"
           >
             <ArrowLeft className="w-5 h-5" />
           </Button>
@@ -202,8 +266,25 @@ export function SalesList() {
               <Skeleton className="h-28 w-full bg-zinc-900 rounded-xl" />
               <Skeleton className="h-40 w-full bg-zinc-900 rounded-xl" />
             </div>
+          ) : returnSuccess ? (
+            <div className="py-16 text-center flex flex-col items-center p-6 animate-in zoom-in-95">
+              <div className="w-16 h-16 rounded-full bg-emerald-500/10 flex items-center justify-center mb-6">
+                <Receipt className="w-8 h-8 text-emerald-400" />
+              </div>
+              <h3 className="text-xl font-bold text-white mb-2">Devolução Processada!</h3>
+              <p className="text-zinc-400 text-sm mb-6">A solicitação de devolução foi criada com sucesso no sistema.</p>
+              
+              <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-xl w-full max-w-sm text-left mb-6 space-y-2">
+                <p className="text-sm text-zinc-400 flex justify-between">ID: <span className="text-white font-mono">{returnSuccess.id}</span></p>
+                <p className="text-sm text-zinc-400 flex justify-between">Número da Devolução: <span className="text-white font-mono">{returnSuccess.numero}</span></p>
+              </div>
+
+              <Button onClick={handleBackToList} className="bg-zinc-800 hover:bg-zinc-700 text-white">
+                <ArrowLeft className="w-4 h-4 mr-2" /> Voltar para Vendas
+              </Button>
+            </div>
           ) : saleDetails ? (
-            <div className="p-6 space-y-6">
+            <div className={`p-6 space-y-6 ${processingReturn ? 'opacity-50 pointer-events-none' : ''}`}>
               {/* Basic Info */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="bg-zinc-900 p-4 rounded-xl border border-zinc-800">
@@ -273,6 +354,7 @@ export function SalesList() {
                           <Checkbox
                             id={`item-${item.id}`}
                             checked={isSelected}
+                            disabled={processingReturn}
                             onCheckedChange={(checked) => {
                               if (checked) {
                                 setSelectedItems((prev) => [...prev, item.id]);
@@ -387,34 +469,26 @@ export function SalesList() {
         </div>
 
         {/* Action Button Sticky Footer */}
-        {!loadingDetails && saleDetails && selectedItems.length > 0 && (
+        {!loadingDetails && !returnSuccess && saleDetails && selectedItems.length > 0 && (
           <div className="sticky bottom-0 left-0 w-full p-4 bg-zinc-950/80 backdrop-blur-md border-t border-zinc-800 animate-in slide-in-from-bottom-4 shadow-[0_-15px_40px_rgba(0,0,0,0.6)] z-20 rounded-b-2xl">
             <Button
               size="lg"
-              className="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold text-sm sm:text-base shadow-[0_0_20px_rgba(37,99,235,0.2)]"
-              onClick={() => {
-                const payload = {
-                  idVenda: saleDetails.id,
-                  itensSelecionados: saleDetails.itens
-                    .filter((item) => selectedItems.includes(item.id))
-                    .map((item) => ({
-                      idItem: item.id,
-                      quantidade: item.quantidade,
-                      valor: item.valor,
-                    })),
-                };
-                console.log(
-                  "📦 Payload gerado para envio (Backend):",
-                  JSON.stringify(payload, null, 2),
-                );
-                alert(
-                  `Payload gerado!\nVeja no console (F12) os ${payload.itensSelecionados.length} itens formatados.`,
-                );
-              }}
+              disabled={processingReturn}
+              className="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold text-sm sm:text-base shadow-[0_0_20px_rgba(37,99,235,0.2)] disabled:opacity-75 disabled:cursor-not-allowed transition-all"
+              onClick={processReturn}
             >
-              <Package className="w-5 h-5 mr-2" />
-              Processar devolução de {selectedItems.length}{" "}
-              {selectedItems.length === 1 ? "Produto" : "Produtos"}
+              {processingReturn ? (
+                <>
+                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                  Processando Devolução...
+                </>
+              ) : (
+                <>
+                  <Package className="w-5 h-5 mr-2" />
+                  Processar devolução de {selectedItems.length}{" "}
+                  {selectedItems.length === 1 ? "Produto" : "Produtos"}
+                </>
+              )}
             </Button>
           </div>
         )}
